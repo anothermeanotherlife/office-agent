@@ -78,6 +78,23 @@ sau đó audit bằng code. Nếu audit FAIL, orchestrator sửa đúng
 `must_fix_next` và chạy lại, tối đa 3 vòng mặc định (5 vòng cho tài liệu
 phức tạp), dừng sớm khi 2 vòng liên tiếp không cải thiện.
 
+## Cải tiến liên tục — phản biện lẫn nhau, không phải "làm xong thôi"
+
+"Xong" chỉ là một checkpoint. Xem `agents/debate.md` và
+`agents/continuous.py`:
+
+- Mỗi lần chạy, Critic phải tấn công lại bản tốt nhất hiện tại, kể cả
+  khi bản đó đã PASS. Critic được "thưởng" khi tìm ra lỗi thật, không
+  khi khen. Defender phải bảo vệ phần đã PASS bằng bằng chứng đo được.
+- Auditor độc lập quyết định theo cổng chất lượng, không theo lời khen.
+- Vòng dừng tạm thời khi 2 vòng liên tiếp không cải thiện điểm và không
+  còn BLOCKER/MAJOR — nhưng backlog mở vẫn còn, và lần chạy sau phải mở
+  lại backlog đó trước. Có những mục không bao giờ tự đóng bằng code,
+  ví dụ "chưa trình chiếu click thật trong PowerPoint".
+- Chạy thử: `python -m agents.continuous examples/output runs/continuous-q3`
+  sẽ sinh `debate_log.md` với từng phản biện, phản biện lại, và quyết
+  định của Auditor.
+
 ## Vòng làm việc
 
 ```text

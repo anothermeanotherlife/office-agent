@@ -140,6 +140,22 @@ trực quan hoá, độ chính xác số liệu và accessibility phải ≥4/5.
 rubric 100 điểm: ≥85 điểm, không tiêu chí nào 0, không BLOCKER,
 MAJOR ≤2 (tài liệu thường) hoặc =0 (tài liệu gửi khách hàng).
 
+## 9. Phản biện liên tục
+
+- "Xong" chỉ là checkpoint. Mỗi lần chạy, Critic phải tấn công lại bản
+  tốt nhất, kể cả khi bản đó đã PASS.
+- Critic bắt buộc pre-mortem: ít nhất 3 cách bản này có thể sai, trước
+  khi chấm. Defender bảo vệ bằng bằng chứng đo được, không bằng lời khen.
+- Builder chỉ sửa đúng `must_fix_next`. Bản mới phải ≥ bản tốt nhất,
+  nếu không giữ bản cũ.
+- Dừng tạm thời khi 2 vòng liên tiếp không cải thiện điểm và không còn
+  BLOCKER/MAJOR. Dừng tạm thời ≠ đóng dự án: backlog mở phải được mở
+  lại ở lần chạy sau.
+- Mục không đóng được bằng code (ví dụ playback PowerPoint thật, hiệu
+  chuẩn critic bằng xếp hạng người thật) phải nằm trong backlog mở, ghi
+  rõ mức bằng chứng đã đạt, và không được ghi là "đã kiểm chứng" khi
+  chưa đạt.
+
 ## Changelog
 
 - v1.0 (2026-10-26): tổng hợp từ nghiên cứu PPTX (skill-for-pptx),
