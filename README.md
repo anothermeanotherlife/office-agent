@@ -95,6 +95,21 @@ phức tạp), dừng sớm khi 2 vòng liên tiếp không cải thiện.
   sẽ sinh `debate_log.md` với từng phản biện, phản biện lại, và quyết
   định của Auditor.
 
+## Ví dụ khó — doanh thu tăng, lợi nhuận giảm
+
+Ví dụ Q3 đơn giản chỉ để kiểm tra cổng. Ví dụ khó ở
+`examples/build_hard_example.py` mới là bài kiểm tra thật:
+
+- 4 quý 2026, doanh thu 4.200 nhưng lợi nhuận giảm đều: biên 40,5% (Q1) → 30,6% (Q4).
+- Online tăng 460 → 610 nhưng tỷ lệ chi phí Online tăng 54,3% → 63,9%.
+- 3 kịch bản bằng công thức (không gõ tay): Giữ nguyên 1.449, Thu hẹp Đại lý 1.490,
+  Đầu tư Online 1.488 — kịch bản thắng chỉ hơn nhì 2, nên đề xuất đi kèm điều kiện dừng.
+- Excel có sheet Data, Quarterly, Channel, Summary, Scenario (input xanh dương theo chuẩn FAST),
+  Sensitivity và Dashboard; Word viết theo Pyramid (kết luận trước, bằng chứng sau).
+- Nguyên tắc "bớt mùi AI" và nguồn YouTube/video tham khảo ở `docs/human-design.md`.
+
+Chạy: `python examples/build_hard_example.py` → `examples/hard-output/report.{docx,xlsx,pptx}`
+
 ## Vòng làm việc
 
 ```text

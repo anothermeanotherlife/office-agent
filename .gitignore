@@ -3,5 +3,6 @@ __pycache__/
 .venv/
 runs/
 examples/output/
+examples/hard-output/
 *.pdf
 *.png
