@@ -42,206 +42,154 @@ assert sum(v[0] for v in RAW.values()) == 4200
 assert sum(v[1] for v in RAW.values()) == 2700
 
 
-# ---------------------------------------------------------------- XLSX
+# ---------------------------------------------------------------- XLSX (XlsxWriter)
+# Why XlsxWriter, not openpyxl, for this file: openpyxl native charts render
+# in LibreOffice with a garbled legend ("Q1; Doanh thu; Q2; Doanh thu; ...")
+# even with legend=None and with populated caches. XlsxWriter charts render
+# cleanly in LibreOffice (tested 2026-10-26). Visual truth beats audit score.
 def build_xlsx(path: Path, tokens: dict) -> None:
-    from openpyxl import Workbook
-    from openpyxl.chart import BarChart, Reference
-    from openpyxl.chart.label import DataLabelList
-    from openpyxl.styles import Alignment, Font, PatternFill
-    from openpyxl.styles import Border, Side
+    import xlsxwriter
 
     colors = tokens["colors"]
-    BLUE, BLACK, GREEN = "0000FF", "000000", "00B050"
-    hdr_font = Font(name="Calibri", size=11, bold=True, color=colors["header_text"])
-    hdr_fill = PatternFill("solid", fgColor=colors["header_bg"])
-    thin = Side(style="thin", color=colors["muted"])
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+    wb = xlsxwriter.Workbook(str(path))
+    hdr = wb.add_format({"bold": True, "font_color": colors["header_text"], "bg_color": colors["header_bg"], "font_name": "Calibri", "font_size": 11, "border": 1})
+    blue = wb.add_format({"font_color": "0000FF", "font_name": "Calibri", "font_size": 11, "border": 1})
+    black = wb.add_format({"font_color": "000000", "font_name": "Calibri", "font_size": 11, "border": 1})
+    green = wb.add_format({"font_color": "00B050", "font_name": "Calibri", "font_size": 11, "border": 1})
+    money_blue = wb.add_format({"font_color": "0000FF", "font_name": "Calibri", "font_size": 11, "border": 1, "num_format": "#,##0"})
+    money_black = wb.add_format({"font_color": "000000", "font_name": "Calibri", "font_size": 11, "border": 1, "num_format": "#,##0"})
+    money_green = wb.add_format({"font_color": "00B050", "font_name": "Calibri", "font_size": 11, "border": 1, "num_format": "#,##0"})
+    pct_blue = wb.add_format({"font_color": "0000FF", "font_name": "Calibri", "font_size": 11, "border": 1, "num_format": "0.0%"})
+    pct_green = wb.add_format({"font_color": "00B050", "font_name": "Calibri", "font_size": 11, "border": 1, "num_format": "0.0%"})
+    pct_black = wb.add_format({"font_color": "000000", "font_name": "Calibri", "font_size": 11, "border": 1, "num_format": "0.0%"})
+    title_fmt = wb.add_format({"bold": True, "font_color": colors["primary"], "font_name": "Calibri", "font_size": 16})
 
-    def header(ws, row, values):
-        for ci, v in enumerate(values, start=1):
-            c = ws.cell(row=row, column=ci, value=v)
-            c.font, c.fill, c.border = hdr_font, hdr_fill, border
+    def setup(ws, widths, landscape=True):
+        ws.freeze_panes(1, 0)
+        if landscape:
+            ws.set_landscape()
+        ws.fit_to_pages(1, 1)
+        for col, w in widths.items():
+            ws.set_column(col, w)
 
-    def style_row(ws, row, ncols, fmt=None, font_color=BLACK, bold=False):
-        for ci in range(1, ncols + 1):
-            c = ws.cell(row=row, column=ci)
-            c.font = Font(name="Calibri", size=11, bold=bold, color=font_color)
-            c.border = border
-            if fmt and ci >= 2:
-                c.number_format = fmt
+    readme = wb.add_worksheet("README")
+    readme.write(0, 0, "Báo cáo 4 quý 2026 — Doanh thu tăng, lợi nhuận giảm", title_fmt)
+    readme.write(1, 0, "Đơn vị: triệu đồng. Nguồn: dữ liệu nội bộ tổng hợp. Mọi tổng là công thức, không gõ tay.")
+    readme.write(2, 0, "Màu chữ theo chuẩn FAST: xanh dương = số nhập tay (input), đen = công thức trong sheet, xanh lá = công thức liên kết sheet khác.")
+    readme.write(3, 0, "Summary là bảng tổng hợp bằng công thức, không phải PivotTable native.")
+    readme.write(4, 0, "Kịch bản và độ nhạy nằm ở sheet Scenario và Sensitivity; đổi ô xanh dương, các tổng tự đổi.")
+    readme.set_column("A:A", 120)
 
-    wb = Workbook()
-    readme = wb.active
-    readme.title = "README"
-    readme["A1"] = "Báo cáo 4 quý 2026 — Doanh thu tăng, lợi nhuận giảm"
-    readme["A1"].font = Font(name="Calibri", size=16, bold=True, color=colors["primary"])
-    readme["A2"] = "Đơn vị: triệu đồng. Nguồn: dữ liệu nội bộ tổng hợp. Mọi tổng là công thức, không gõ tay."
-    readme["A3"] = "Màu chữ theo chuẩn FAST: xanh dương = số nhập tay (input), đen = công thức trong sheet, xanh lá = công thức liên kết sheet khác."
-    readme["A4"] = "Summary là bảng tổng hợp bằng công thức, không phải PivotTable native (openpyxl không tạo PivotTable từ đầu)."
-    readme["A5"] = "Kịch bản và độ nhạy nằm ở sheet Scenario và Sensitivity; đổi ô xanh dương, các tổng tự đổi."
-    readme.column_dimensions["A"].width = 120
-
-    data = wb.create_sheet("Data")
-    header(data, 1, ["Quý", "Doanh thu", "Chi phí", "Kênh", "Lợi nhuận"])
-    r = 2
+    data = wb.add_worksheet("Data")
+    for ci, h in enumerate(["Quý", "Doanh thu", "Chi phí", "Kênh", "Lợi nhuận"]):
+        data.write(0, ci, h, hdr)
+    r = 1
     for q in QUARTERS:
         for ch in CHANNELS:
             rev, cost = RAW[(q, ch)]
-            data.cell(row=r, column=1, value=q)
-            data.cell(row=r, column=2, value=rev)
-            data.cell(row=r, column=3, value=cost)
-            data.cell(row=r, column=4, value=ch)
-            data.cell(row=r, column=5, value=f"=B{r}-C{r}")
-            style_row(data, r, 5, fmt="#,##0", font_color=BLACK)
-            # Inputs are blue, the profit formula is black.
-            for ci in (1, 2, 3, 4):
-                data.cell(row=r, column=ci).font = Font(name="Calibri", size=11, color=BLUE)
+            data.write(r, 0, q, blue); data.write_number(r, 1, rev, money_blue); data.write_number(r, 2, cost, money_blue)
+            data.write(r, 3, ch, blue); data.write_formula(r, 4, f"=B{r+1}-C{r+1}", money_black, rev-cost)
             r += 1
-    data.freeze_panes = "A2"
-    data.auto_filter.ref = data.dimensions
-    data.sheet_properties.pageSetUpPr.fitToPage = True
-    data.page_setup.orientation = "landscape"; data.page_setup.fitToWidth = 1; data.page_setup.fitToHeight = 1
-    data.print_title_rows = "1:1"
-    for col, w in zip("ABCDE", (12, 16, 16, 16, 16)):
-        data.column_dimensions[col].width = w
+    data.autofilter(0, 0, 12, 4)
+    setup(data, {"A:A": 12, "B:E": 16}); data.repeat_rows(0); data.print_area("A1:E13")
 
-    qtr = wb.create_sheet("Quarterly")
-    header(qtr, 1, ["Quý", "Doanh thu", "Chi phí", "Lợi nhuận", "Biên"])
-    for i, q in enumerate(QUARTERS, start=2):
-        qtr.cell(row=i, column=1, value=q)
-        qtr.cell(row=i, column=2, value=f'=SUMIFS(Data!B:B,Data!A:A,A{i})')
-        qtr.cell(row=i, column=3, value=f'=SUMIFS(Data!C:C,Data!A:A,A{i})')
-        qtr.cell(row=i, column=4, value=f"=B{i}-C{i}")
-        qtr.cell(row=i, column=5, value=f"=IF(B{i}=0,0,D{i}/B{i})")
-        style_row(qtr, i, 5, font_color=GREEN)
-        qtr.cell(row=i, column=5).number_format = "0.0%"
-        for ci in (2, 3, 4):
-            qtr.cell(row=i, column=ci).number_format = "#,##0"
-    qtr.freeze_panes = "A2"
+    qtr = wb.add_worksheet("Quarterly")
+    for ci, h in enumerate(["Quý", "Doanh thu", "Chi phí", "Lợi nhuận", "Biên"]):
+        qtr.write(0, ci, h, hdr)
+    for i, q in enumerate(QUARTERS, start=1):
+        qtr.write(i, 0, q, green)
+        qtr.write_formula(i, 1, f"=SUMIFS(Data!B:B,Data!A:A,A{i+1})", money_green, sum(RAW[(q, ch)][0] for ch in CHANNELS))
+        qtr.write_formula(i, 2, f"=SUMIFS(Data!C:C,Data!A:A,A{i+1})", money_green, sum(RAW[(q, ch)][1] for ch in CHANNELS))
+        qtr.write_formula(i, 3, f"=B{i+1}-C{i+1}", money_green, sum(RAW[(q, ch)][0]-RAW[(q, ch)][1] for ch in CHANNELS))
+        qtr.write_formula(i, 4, f"=IF(B{i+1}=0,0,D{i+1}/B{i+1})", pct_green, sum(RAW[(q, ch)][0]-RAW[(q, ch)][1] for ch in CHANNELS)/sum(RAW[(q, ch)][0] for ch in CHANNELS))
+    setup(qtr, {"A:A": 12, "B:D": 16, "E:E": 12})
 
-    chan = wb.create_sheet("Channel")
-    header(chan, 1, ["Kênh", "Doanh thu", "Chi phí", "Lợi nhuận", "Tỷ lệ chi phí", "Biên"])
-    for i, ch in enumerate(CHANNELS, start=2):
-        chan.cell(row=i, column=1, value=ch)
-        chan.cell(row=i, column=2, value=f'=SUMIFS(Data!B:B,Data!D:D,A{i})')
-        chan.cell(row=i, column=3, value=f'=SUMIFS(Data!C:C,Data!D:D,A{i})')
-        chan.cell(row=i, column=4, value=f"=B{i}-C{i}")
-        chan.cell(row=i, column=5, value=f"=IF(B{i}=0,0,C{i}/B{i})")
-        chan.cell(row=i, column=6, value=f"=IF(B{i}=0,0,D{i}/B{i})")
-        style_row(chan, i, 6, font_color=GREEN)
-        for ci in (2, 3, 4):
-            chan.cell(row=i, column=ci).number_format = "#,##0"
-        for ci in (5, 6):
-            chan.cell(row=i, column=ci).number_format = "0.0%"
-    chan.freeze_panes = "A2"
+    chan = wb.add_worksheet("Channel")
+    for ci, h in enumerate(["Kênh", "Doanh thu", "Chi phí", "Lợi nhuận", "Tỷ lệ chi phí", "Biên"]):
+        chan.write(0, ci, h, hdr)
+    for i, ch in enumerate(CHANNELS, start=1):
+        chan.write(i, 0, ch, green)
+        chan.write_formula(i, 1, f"=SUMIFS(Data!B:B,Data!D:D,A{i+1})", money_green, sum(RAW[(qq, ch)][0] for qq in QUARTERS))
+        chan.write_formula(i, 2, f"=SUMIFS(Data!C:C,Data!D:D,A{i+1})", money_green, sum(RAW[(qq, ch)][1] for qq in QUARTERS))
+        chan.write_formula(i, 3, f"=B{i+1}-C{i+1}", money_green, sum(RAW[(qq, ch)][0]-RAW[(qq, ch)][1] for qq in QUARTERS))
+        chan.write_formula(i, 4, f"=IF(B{i+1}=0,0,C{i+1}/B{i+1})", pct_green, sum(RAW[(qq, ch)][1] for qq in QUARTERS)/sum(RAW[(qq, ch)][0] for qq in QUARTERS))
+        chan.write_formula(i, 5, f"=IF(B{i+1}=0,0,D{i+1}/B{i+1})", pct_green, sum(RAW[(qq, ch)][0]-RAW[(qq, ch)][1] for qq in QUARTERS)/sum(RAW[(qq, ch)][0] for qq in QUARTERS))
+    setup(chan, {"A:A": 16, "B:D": 16, "E:F": 16})
 
-    summ = wb.create_sheet("Summary")
-    header(summ, 1, ["Chỉ số", "Tổng (công thức liên kết Data)"])
-    summ["A2"] = "Tổng doanh thu"; summ["B2"] = "=SUM(Data!B2:B13)"
-    summ["A3"] = "Tổng chi phí"; summ["B3"] = "=SUM(Data!C2:C13)"
-    summ["A4"] = "Lợi nhuận (doanh thu - chi phí)"; summ["B4"] = "=B2-B3"
-    summ["A5"] = "Tỷ lệ lợi nhuận"; summ["B5"] = "=IF(B2=0,0,B4/B2)"
-    for row in (2, 3, 4):
-        summ.cell(row=row, column=2).number_format = "#,##0"
-    summ["B5"].number_format = "0.0%"
-    summ["A7"] = "Đối chiếu: tổng theo quý trừ tổng chung (phải = 0)"
-    summ["B7"] = "=SUM(Quarterly!B2:B5)-B2"
-    summ["A8"] = "Đối chiếu: tổng theo kênh trừ tổng chung (phải = 0)"
-    summ["B8"] = "=SUM(Channel!B2:B4)-B2"
-    summ["A9"] = "Đối chiếu: lợi nhuận quý Q1→Q4 (Q4 − Q1, phải = −75)"
-    summ["B9"] = "=Quarterly!D5-Quarterly!D2"
-    summ.freeze_panes = "A2"
-    summ.sheet_properties.pageSetUpPr.fitToPage = True
-    summ.column_dimensions["A"].width = 52; summ.column_dimensions["B"].width = 30
+    summ = wb.add_worksheet("Summary")
+    summ.write(0, 0, "Chỉ số", hdr); summ.write(0, 1, "Tổng (công thức liên kết Data)", hdr)
+    summ.write(1, 0, "Tổng doanh thu"); summ.write_formula(1, 1, "=SUM(Data!B2:B13)", money_black, 4200)
+    summ.write(2, 0, "Tổng chi phí"); summ.write_formula(2, 1, "=SUM(Data!C2:C13)", money_black, 2700)
+    summ.write(3, 0, "Lợi nhuận (doanh thu - chi phí)"); summ.write_formula(3, 1, "=B2-B3", money_black, 1500)
+    summ.write(4, 0, "Tỷ lệ lợi nhuận"); summ.write_formula(4, 1, "=IF(B2=0,0,B4/B2)", pct_black, 1500/4200)
+    summ.write(6, 0, "Đối chiếu: tổng theo quý trừ tổng chung (phải = 0)"); summ.write_formula(6, 1, "=SUM(Quarterly!B2:B5)-B2", money_black, 0)
+    summ.write(7, 0, "Đối chiếu: tổng theo kênh trừ tổng chung (phải = 0)"); summ.write_formula(7, 1, "=SUM(Channel!B2:B4)-B2", money_black, 0)
+    summ.write(8, 0, "Đối chiếu: lợi nhuận quý Q1→Q4 (Q4 − Q1, phải = −75)"); summ.write_formula(8, 1, "=Quarterly!D5-Quarterly!D2", money_black, -75)
+    setup(summ, {"A:A": 52, "B:B": 30})
 
-    scen = wb.create_sheet("Scenario")
-    header(scen, 1, ["Kịch bản", "Online +", "Cửa hàng +", "Đại lý +", "Tăng tỷ lệ chi phí (pp)"])
-    inputs = [("Giữ nguyên", 0.08, -0.03, -0.10, 0.02),
-              ("Thu hẹp Đại lý", 0.18, -0.03, -0.50, 0.01),
-              ("Đầu tư Online", 0.25, -0.05, -0.10, 0.04)]
-    for i, (name, o, s, a, d) in enumerate(inputs, start=2):
-        scen.cell(row=i, column=1, value=name)
-        for ci, v in enumerate((o, s, a, d), start=2):
-            c = scen.cell(row=i, column=ci, value=v)
-            c.number_format = "0.0%"
-            c.font = Font(name="Calibri", size=11, color=BLUE)
-    header(scen, 6, ["Kênh", "Doanh thu gốc", "Tỷ lệ chi phí gốc"])
-    for i, ch in enumerate(CHANNELS, start=7):
-        scen.cell(row=i, column=1, value=ch)
-        scen.cell(row=i, column=2, value=f"=Channel!B{i - 5}")
-        scen.cell(row=i, column=3, value=f"=Channel!E{i - 5}")
-        style_row(scen, i, 3, font_color=GREEN)
-        scen.cell(row=i, column=2).number_format = "#,##0"
-        scen.cell(row=i, column=3).number_format = "0.0%"
-    header(scen, 11, ["Kịch bản", "Doanh thu", "Chi phí", "Lợi nhuận", "Biên"])
-    for j, scen_row in enumerate((2, 3, 4), start=12):
-        scen.cell(row=j, column=1, value=f"=A{scen_row}")
-        # Revenue: base * (1+growth) summed over channels; Cost: revenue * (base rate + delta)
-        rev = "+".join(f"$B${7 + k}*(1+{chr(66 + k)}{scen_row})" for k in range(3))
-        cost = "+".join(f"$B${7 + k}*(1+{chr(66 + k)}{scen_row})*($C${7 + k}+$E${scen_row})" for k in range(3))
-        scen.cell(row=j, column=2, value=f"={rev}")
-        scen.cell(row=j, column=3, value=f"={cost}")
-        scen.cell(row=j, column=4, value=f"=B{j}-C{j}")
-        scen.cell(row=j, column=5, value=f"=IF(B{j}=0,0,D{j}/B{j})")
-        style_row(scen, j, 5, font_color=BLACK)
-        for ci in (2, 3, 4):
-            scen.cell(row=j, column=ci).number_format = "#,##0"
-        scen.cell(row=j, column=5).number_format = "0.0%"
-    scen.freeze_panes = "A2"
-    scen.column_dimensions["A"].width = 22
-    for col in "BCDE":
-        scen.column_dimensions[col].width = 16
+    scen = wb.add_worksheet("Scenario")
+    for ci, h in enumerate(["Kịch bản", "Online +", "Cửa hàng +", "Đại lý +", "Tăng tỷ lệ chi phí (pp)"]):
+        scen.write(0, ci, h, hdr)
+    inputs = [("Giữ nguyên", 0.08, -0.03, -0.10, 0.02), ("Thu hẹp Đại lý", 0.18, -0.03, -0.50, 0.01), ("Đầu tư Online", 0.25, -0.05, -0.10, 0.04)]
+    for i, (name, o, s, a, d) in enumerate(inputs, start=1):
+        scen.write(i, 0, name, black)
+        for ci, v in enumerate((o, s, a, d), start=1):
+            scen.write_number(i, ci, v, pct_blue)
+    for ci, h in enumerate(["Kênh", "Doanh thu gốc", "Tỷ lệ chi phí gốc"]):
+        scen.write(5, ci, h, hdr)
+    for i, ch in enumerate(CHANNELS, start=6):
+        scen.write(i, 0, ch, green)
+        scen.write_formula(i, 1, f"=Channel!B{i-4}", money_green, [2150, 1480, 570][i-6])
+        scen.write_formula(i, 2, f"=Channel!E{i-4}", pct_green, [1290/2150, 1060/1480, 350/570][i-6])
+    for ci, h in enumerate(["Kịch bản", "Doanh thu", "Chi phí", "Lợi nhuận", "Biên"]):
+        scen.write(10, ci, h, hdr)
+    _base_rev = [2150, 1480, 570]; _base_rate = [1290/2150, 1060/1480, 350/570]
+    for j, scen_row in enumerate((2, 3, 4), start=11):
+        scen.write_formula(j, 0, f"=A{scen_row}", black, inputs[scen_row-2][0])
+        rev = "+".join(f"$B${7+k}*(1+{chr(66+k)}{scen_row})" for k in range(3))
+        cost = "+".join(f"$B${7+k}*(1+{chr(66+k)}{scen_row})*($C${7+k}+$E${scen_row})" for k in range(3))
+        _g = inputs[scen_row-2][1:4]; _d = inputs[scen_row-2][4]
+        _rev_v = sum(_base_rev[k] * (1 + _g[k]) for k in range(3))
+        _cost_v = sum(_base_rev[k] * (1 + _g[k]) * (_base_rate[k] + _d) for k in range(3))
+        scen.write_formula(j, 1, f"={rev}", money_black, _rev_v)
+        scen.write_formula(j, 2, f"={cost}", money_black, _cost_v)
+        scen.write_formula(j, 3, f"=B{j+1}-C{j+1}", money_black, _rev_v - _cost_v)
+        scen.write_formula(j, 4, f"=IF(B{j+1}=0,0,D{j+1}/B{j+1})", pct_black, (_rev_v - _cost_v) / _rev_v)
+    setup(scen, {"A:A": 24, "B:E": 16})
 
-    sens = wb.create_sheet("Sensitivity")
-    sens["A1"] = "Độ nhạy lợi nhuận — kịch bản Thu hẹp Đại lý (đổi ô xanh ở Scenario, bảng này tự đổi)"
-    header(sens, 3, ["Tăng trưởng Online \\ Tăng tỷ lệ chi phí Online", 0, 0.01, 0.03])
-    for ci in (2, 3, 4):
-        sens.cell(row=3, column=ci).number_format = "0.0%"
-        sens.cell(row=3, column=ci).font = Font(name="Calibri", size=11, bold=True, color=BLUE)
-    for i, g in enumerate((0.10, 0.18, 0.25), start=4):
-        sens.cell(row=i, column=1, value=g).number_format = "0.0%"
-        sens.cell(row=i, column=1).font = Font(name="Calibri", size=11, color=BLUE)
-        for ci, col in enumerate("BCD", start=2):
-            # Online profit with varied growth/delta + Store/Agent profit of Narrow scenario (Scenario row 3 inputs)
-            formula = (f"=$B$9*(1+$A{i})*(1-($C$9+{col}$3))"
-                       f"+$B$10*(1+$C$3)*(1-($C$10+$E$3))"
-                       f"+$B$11*(1+$D$3)*(1-($C$11+$E$3))")
-            # NOTE: Scenario sheet layout: channel bases are rows 7-9 in the Scenario sheet,
-            # not in Sensitivity. Fix references below in a second pass.
-            sens.cell(row=i, column=ci, value=f"=Scenario!{formula[1:]}" if False else None)
-    # Second pass with correct cross-sheet references (Scenario!B7:B9, C7:C9, inputs row 3 = Narrow).
-    for i in range(4, 7):
-        for ci, col in enumerate("BCD", start=2):
-            sens.cell(row=i, column=ci, value=(
-                f"=Scenario!$B$7*(1+$A{i})*(1-(Scenario!$C$7+{col}$3))"
+    sens = wb.add_worksheet("Sensitivity")
+    sens.merge_range(0, 0, 0, 3, "Độ nhạy lợi nhuận — kịch bản Thu hẹp Đại lý (đổi ô xanh ở Scenario, bảng này tự đổi)")
+    for ci, h in enumerate(["Tăng trưởng Online \\ Tăng tỷ lệ chi phí Online", 0, 0.01, 0.03]):
+        if ci == 0:
+            sens.write(2, ci, h, hdr)
+        else:
+            sens.write_number(2, ci, h, pct_blue)
+    for i, g in enumerate((0.10, 0.18, 0.25), start=3):
+        sens.write_number(i, 0, g, pct_blue)
+        for ci, (col, d) in enumerate(zip("BCD", (0, 0.01, 0.03)), start=1):
+            _sens_v = (2150 * (1 + g) * (1 - (1290/2150 + d))
+                       + 1480 * 0.97 * (1 - (1060/1480 + 0.01))
+                       + 570 * 0.50 * (1 - (350/570 + 0.01)))
+            sens.write_formula(i, ci, (
+                f"=Scenario!$B$7*(1+$A{i+1})*(1-(Scenario!$C$7+{col}$3))"
                 f"+Scenario!$B$8*(1+Scenario!$C$3)*(1-(Scenario!$C$8+Scenario!$E$3))"
-                f"+Scenario!$B$9*(1+Scenario!$D$3)*(1-(Scenario!$C$9+Scenario!$E$3))"))
-            sens.cell(row=i, column=ci).number_format = "#,##0"
-            sens.cell(row=i, column=ci).font = Font(name="Calibri", size=11, color=GREEN)
-    sens.freeze_panes = "A4"
-    sens.column_dimensions["A"].width = 44
-    for col in "BCD":
-        sens.column_dimensions[col].width = 18
+                f"+Scenario!$B$9*(1+Scenario!$D$3)*(1-(Scenario!$C$9+Scenario!$E$3))"), money_green, _sens_v)
+    setup(sens, {"A:A": 40, "B:D": 16}); sens.print_area("A1:D6"); sens.repeat_rows(2)
 
-    dash = wb.create_sheet("Dashboard")
-    dash["A1"] = "Doanh thu và lợi nhuận theo quý (nguồn: Quarterly; trục cột bắt đầu từ 0)"
-    chart = BarChart()
-    chart.type = "col"; chart.title = "Doanh thu và lợi nhuận theo quý"
-    chart.y_axis.title = "Triệu đồng"; chart.x_axis.title = "Quý"
-    chart.style = 10; chart.legend = None
-    chart_data = Reference(qtr, min_col=2, min_row=1, max_row=5, max_col=4)
-    cats = Reference(qtr, min_col=1, min_row=2, max_row=5)
-    chart.add_data(chart_data, titles_from_data=True)
-    chart.set_categories(cats)
-    chart.y_axis.scaling.min = 0
-    chart.dataLabels = DataLabelList(); chart.dataLabels.showVal = True
-    dash.add_chart(chart, "A3")
-    dash.sheet_properties.pageSetUpPr.fitToPage = True
+    dash = wb.add_worksheet("Dashboard")
+    dash.write(0, 0, "Doanh thu theo quý (nguồn: Quarterly; trục cột bắt đầu từ 0)")
+    chart = wb.add_chart({"type": "column"})
+    chart.add_series({"name": "Doanh thu", "categories": ["Quarterly", 1, 0, 4, 0], "values": ["Quarterly", 1, 1, 4, 1], "data_labels": {"value": True}})
+    chart.set_title({"name": "Doanh thu theo quý"})
+    chart.set_x_axis({"name": "Quý"}); chart.set_y_axis({"name": "Triệu đồng", "min": 0})
+    chart.set_legend({"none": True})
+    dash.insert_chart("A3", chart)
+    setup(dash, {"A:A": 100})
 
-    wb.properties.title = "Báo cáo 4 quý 2026 — Doanh thu tăng, lợi nhuận giảm"
-    wb.properties.creator = tokens["brand"]
+    wb.set_properties({"title": "Báo cáo 4 quý 2026 — Doanh thu tăng, lợi nhuận giảm", "creator": tokens["brand"]})
     path.parent.mkdir(parents=True, exist_ok=True)
-    wb.save(str(path))
+    wb.close()
+
 
 
 # ---------------------------------------------------------------- DOCX
@@ -277,16 +225,35 @@ def build_docx(path: Path, tokens: dict) -> None:
     doc.add_paragraph("Bản ghi quyết định cho ban lãnh đạo. Đơn vị: triệu đồng, trừ khi ghi khác. "
                       "Mọi số trong bản này đều đối chiếu được với file Excel kèm theo (sheet Data → Summary).")
     toc = doc.add_paragraph(); field(toc, ' TOC \\o "1-3" \\h \\z \\u ')
-    doc.add_paragraph("Mục lục do Word cập nhật khi mở file. Audit chỉ kiểm tra field TOC và Heading.")
+    # Visual QA finding: a TOC field alone renders as an empty paragraph in
+    # LibreOffice until the user updates it. So also print a readable contents
+    # list directly, so the rendered file is usable even before any update.
+    doc.add_paragraph("Mục lục — 1. Kết luận trước · 2. Bằng chứng · 3. Vì sao · "
+                      "4. Ba kịch bản · 5. Rủi ro và việc tiếp theo · Phụ lục: Nguồn và cách đối chiếu.")
+
+    def _shade(cell, hex_color):
+        tc_pr = cell._tc.get_or_add_tcPr()
+        shd = OxmlElement("w:shd"); shd.set(qn("w:val"), "clear"); shd.set(qn("w:color"), "auto"); shd.set(qn("w:fill"), hex_color)
+        tc_pr.append(shd)
 
     def table(headers, rows, caption):
+        from docx.shared import RGBColor
         t = doc.add_table(rows=1 + len(rows), cols=len(headers)); t.style = "Table Grid"
+        # Repeat header row when a table splits across pages (visual QA finding:
+        # the continuation page previously showed data rows with no header).
+        tr_pr = t.rows[0]._tr.get_or_add_trPr()
+        th = OxmlElement("w:tblHeader"); th.set(qn("w:val"), "true"); tr_pr.append(th)
         for i, h in enumerate(headers):
-            t.rows[0].cells[i].paragraphs[0].add_run(h).bold = True
+            cell = t.rows[0].cells[i]
+            r = cell.paragraphs[0].add_run(h); r.bold = True
+            r.font.color.rgb = RGBColor(0xFF, 0xFF, 0xFF)
+            _shade(cell, "0F2A44")
         for ri, row in enumerate(rows):
             for ci, v in enumerate(row):
                 t.rows[ri + 1].cells[ci].paragraphs[0].add_run(str(v))
-        doc.add_paragraph(caption, style="Caption")
+        cap = doc.add_paragraph(caption, style="Caption")
+        for r in cap.runs:
+            r.font.size = Pt(9); r.font.color.rgb = RGBColor(0x6B, 0x72, 0x80)
 
     chapters = [
         ("1. Kết luận trước: đề xuất và điều kiện", [
@@ -398,22 +365,27 @@ def build_pptx(path: Path, tokens: dict) -> None:
             _txt(t, title, 30, True, colors["primary"])
         else:
             _box(s, 0.7, 0.35, 11.9, 0.9, title, 30, True, colors["primary"])
-        _box(s, 0.7, 6.95, 11.9, 0.3, "Nguồn: file Excel kèm theo, sheet Data → Summary. Đơn vị: triệu đồng.", 9, False, colors["muted"])
+        _box(s, 0.7, 6.95, 11.9, 0.3, "Nguồn: Excel kèm theo. Đơn vị: triệu đồng.", 9, False, colors["muted"])
         try:
             s.notes_slide.placeholders[1].text_frame.text = note
         except Exception:
             pass
         return s
 
-    def chart(s, cats, series, x=4.9, y=1.5, w=7.7, h=4.8):
+    def chart(s, cats, series, x=4.9, y=1.5, w=7.7, h=4.8, legend=True, labels=True):
         from pptx.chart.data import CategoryChartData as CCD
+        from pptx.enum.chart import XL_LEGEND_POSITION
         cd = CCD(); cd.categories = cats
         for name, vals in series:
             cd.add_series(name, vals)
         g = s.shapes.add_chart(XL_CHART_TYPE.COLUMN_CLUSTERED, Inches(x), Inches(y), Inches(w), Inches(h), cd)
-        ch = g.chart; ch.has_legend = False; ch.value_axis.minimum_scale = 0
+        ch = g.chart; ch.has_legend = legend
+        if legend:
+            ch.legend.position = XL_LEGEND_POSITION.BOTTOM
+            ch.legend.include_in_layout = False
+        ch.value_axis.minimum_scale = 0
         ch.value_axis.has_title = True; ch.value_axis.axis_title.text_frame.text = "Triệu đồng"
-        ch.plots[0].has_data_labels = True
+        ch.plots[0].has_data_labels = labels
         fills = [colors["primary"], colors["accent"], colors["muted"]]
         for i, ser in enumerate(ch.series):
             f = ser.format.fill; f.solid(); f.fore_color.rgb = RGBColor(*bytes.fromhex(fills[i % 3]))
@@ -438,28 +410,41 @@ def build_pptx(path: Path, tokens: dict) -> None:
 
     s = slide("Q1 → Q4: doanh thu +8,0%, lợi nhuận −18,5%", "Điểm gãy ở Q4, không phải một quý xấu đơn lẻ.")
     _box(s, 0.7, 1.6, 3.8, 3.2, "Chi phí tăng +26,1%, nhanh gấp 3 lần doanh thu. Đó là nguyên nhân chính.", 20, False, colors["text"])
-    _box(s, 0.7, 5.1, 3.8, 1.0, "Chú thích: cột xám là chi phí, cột xanh là lợi nhuận — đọc trực tiếp giá trị trên cột.", 12, False, colors["muted"])
+    # Visual QA correction: the old annotation said the grey column was cost,
+    # but this chart has no cost series at all — navy is revenue, teal is profit.
+    _box(s, 0.7, 5.1, 3.8, 1.0, "Chú thích đúng: cột xanh đậm là doanh thu, cột xanh lá là lợi nhuận.", 12, False, colors["muted"])
     chart(s, QUARTERS, [("Doanh thu", [1000, 1050, 1070, 1080]), ("Lợi nhuận", [405, 390, 375, 330])])
 
     s = slide("Online kéo doanh thu, nhưng cũng kéo chi phí lên", "Online tăng 460 → 610, nhưng tỷ lệ chi phí của nó tăng theo.")
     _box(s, 0.7, 1.6, 3.8, 3.2, "Tỷ lệ chi phí Online: 54,3% (Q1) → 63,9% (Q4). Đồng mới ít lãi hơn đồng cũ.", 20, False, colors["text"])
     _box(s, 0.7, 5.1, 3.8, 1.0, "Cả năm Online lãi 860, vẫn lớn nhất tuyệt đối — vấn đề là xu hướng, không phải mức hiện tại.", 12, False, colors["muted"])
-    chart(s, QUARTERS, [("Online", [460, 520, 560, 610]), ("Cửa hàng", [380, 380, 370, 350]), ("Đại lý", [160, 150, 140, 120])])
+    # No data labels on the 3-series chart: they overlapped the bars in the render.
+    chart(s, QUARTERS, [("Online", [460, 520, 560, 610]), ("Cửa hàng", [380, 380, 370, 350]), ("Đại lý", [160, 150, 140, 120])], labels=False)
 
-    s = slide("Thu hẹp Đại lý: lợi nhuận cao nhất, nhưng chỉ hơn 2", "Đừng đọc kịch bản như chiến thắng áp đảo. Chênh lệch quá nhỏ để tự tin tuyệt đối.")
-    _box(s, 0.7, 1.6, 3.8, 3.2, "Giữ nguyên 1.449 · Thu hẹp 1.490 · Đầu tư Online 1.488. Doanh thu cao nhất lại có biên thấp nhất.", 20, False, colors["text"])
-    _box(s, 0.7, 5.1, 3.8, 1.0, "Vì vậy đề xuất đi kèm điều kiện dừng: chi phí Online vượt 64% thì xem lại ngay.", 12, False, colors["muted"])
-    chart(s, ["Giữ nguyên", "Thu hẹp", "Đầu tư"], [("Lợi nhuận kịch bản", [1449, 1490, 1488])])
+    s = slide("Thu hẹp Đại lý: lợi nhuận cao nhất, nhưng chỉ hơn 2", "Đừng đọc kịch bản như chiến thắng áp đảo.")
+    _box(s, 0.7, 1.6, 3.8, 3.2, "Giữ 1.449 · Thu hẹp 1.490 · Đầu tư 1.488.", 20, False, colors["text"])
+    _box(s, 0.7, 5.1, 3.8, 1.0, "Điều kiện dừng: chi phí Online vượt 64% thì xem lại.", 12, False, colors["muted"])
+    # Visual QA correction: three bars from 0 to ~1490 look identical, because
+    # the difference is 2. A bar chart hides the very point of this slide.
+    # Use a comparison table instead, and say so on the slide.
+    for i, (name, rev, profit, margin) in enumerate([
+            ("Giữ nguyên", "4.271", "1.449", "33,9%"),
+            ("Thu hẹp", "4.258", "1.490", "35,0%"),
+            ("Đầu tư", "4.607", "1.488", "32,3%")]):
+        _box(s, 4.9, 1.6 + i * 1.5, 7.7, 1.2,
+             f"{name}: DT {rev} · LN {profit} · Biên {margin}", 20, True, colors["primary"], fill=colors["banded_row"])
+    _box(s, 4.9, 6.1, 7.7, 0.5, "Cột từ 0 giấu chênh lệch 2.", 12, False, colors["muted"])
 
-    s = slide("Quyết định: thu hẹp 50%, giữ Cửa hàng, kìm chi phí", "Ba việc, theo thứ tự, không phải danh sách dài.")
-    _box(s, 0.7, 1.6, 11.9, 1.1, "1. Thu hẹp Đại lý 50%, không cắt hẳn — giữ khách quen, theo dõi hàng tháng.", 20, False, colors["text"])
-    _box(s, 0.7, 3.0, 11.9, 1.1, "2. Đặt trần tỷ lệ chi phí Online ở 64% — vượt trần thì dừng tăng chi tiêu.", 20, False, colors["text"])
-    _box(s, 0.7, 4.4, 11.9, 1.1, "3. Kế toán xác nhận lại cách phân bổ chi phí Online trước khi chốt kỳ tới.", 20, False, colors["text"])
+    s = slide("Quyết định: thu hẹp 50%, giữ Cửa hàng, kìm chi phí", "Ba việc, theo thứ tự.")
+    _box(s, 0.7, 1.6, 11.9, 1.0, "1. Thu hẹp Đại lý 50%, giữ khách quen.", 20, False, colors["text"])
+    _box(s, 0.7, 2.9, 11.9, 1.0, "2. Trần chi phí Online 64%.", 20, False, colors["text"])
+    _box(s, 0.7, 4.2, 11.9, 1.0, "3. Kế toán xác nhận phân bổ chi phí.", 20, False, colors["text"])
+    _box(s, 0.7, 5.5, 11.9, 1.0, "Vượt trần thì dừng.", 20, True, colors["warning"], fill=colors["banded_row"])
 
     s = slide("Phụ lục: đối chiếu và giới hạn", "Appendix chỉ để đối chiếu, không để thuyết trình dài thêm.")
-    _box(s, 0.7, 1.6, 11.9, 4.8,
-         "Tổng năm: 4.200 / 2.700 / 1.500. Quý: 1.000, 1.050, 1.070, 1.080. "
-         "Kênh: 2.150, 1.480, 570. Giới hạn: số nội bộ, không tách cố định / biến đổi; kịch bản là so sánh, không phải dự báo.", 18, False, colors["text"])
+    _box(s, 0.7, 1.6, 11.9, 1.0, "Tổng năm: doanh thu 4.200 · chi phí 2.700 · lợi nhuận 1.500.", 18, False, colors["text"])
+    _box(s, 0.7, 2.9, 11.9, 1.0, "Theo quý: 1.000, 1.050, 1.070, 1.080. Theo kênh: 2.150, 1.480, 570.", 18, False, colors["text"])
+    _box(s, 0.7, 4.2, 11.9, 1.0, "Giới hạn: số nội bộ, không tách cố định / biến đổi; kịch bản là so sánh, không phải dự báo.", 18, False, colors["text"])
 
     path.parent.mkdir(parents=True, exist_ok=True)
     prs.save(str(path))
